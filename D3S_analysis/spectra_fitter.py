@@ -7,12 +7,15 @@ import matplotlib.dates as mdates
 from dateutil.parser import parse
 from datetime import datetime
 from datetime import timedelta
-import urllib2
+import urllib.request
 import pytz
+import codecs
 from matplotlib.backends.backend_pdf import PdfPages
 from scipy import optimize
 from scipy import asarray as ar,exp
 from scipy.integrate import quad
+import pandas as pd
+from pandas import DataFrame
 
 #--------------------------------------------------------------------------#
 # Fit Functions
@@ -42,6 +45,8 @@ def gaus_plus_exp(x,p):
 # p = [a1,mean,sigma,slope,const]
 def gaus_plus_line(x,p):
     return gaus(x,p[0],p[1],p[2])+p[3]*x+p[4]
+def gaus_plus_const(x,p):
+    return gaus(x,p[0],p[1],p[2])+p[3]
 
 def double_gaus_plus_exp(x,p):
     return gaus(x,p[0],p[1],p[2])+gaus(x,p[3],p[4],p[5])+expo(x,p[6],p[7])
@@ -53,31 +58,28 @@ def double_gaus_plus_line(x,p):
 # Process input data
 #--------------------------------------------------------------------------#
 def make_int(lst): 
-    '''
-    Makes all entries of a list an integer
-    '''
+    
+    #Makes all entries of a list an integer
     y = []
     for i in lst:
         y.append(int(i))
     return y
-
-def make_array(lst): 
+def make_array(lst,low=10,high=1032): 
     '''
     Makes list into an array. Also splices out the irrelevant stuff 
-    for a spectra
+    for a spectra. Set lower and upper bound of required Data for each isotope
+    from input CSV file.
     '''
-    y = np.asarray(make_int(lst[12:]))
-    return y
-
+    z = np.asarray(make_int(lst[low:high]))
+    return z
+  
 def get_times(rows, number, n=1):
     '''
     Get list of times for data: determines time as the midpoint between the upper and lower bounds in the integration window
-
     Arguments:
       - full list of inputs from data csv
       - number of days to collect data over
       - number of hours to integrate over
-
     Returns:
       - list of times
     '''
@@ -108,11 +110,9 @@ def double_peak_finder(array,lower,upper):
     Fits double gaussian + exponential to data within some window
       - fit is applied only to data within the upper/lower channel 
         boundaries provided as inputs
-
     Arguments:
       - full array of data
       - lower and upper channel values for the fit window
-
     Returns:
       - list of fit parameters and list of parameter errors
     '''
@@ -166,12 +166,10 @@ def peak_finder(array,lower,upper,count_offset):
     Fits gaussian + exponential to data within some window
       - fit is applied only to data within the upper/lower channel 
         boundaries provided as inputs
-
     Arguments:
       - full array of data
       - lower and upper channel values for the fit window
       - count_offset used to correct exponential fit parameter for the fact that the fit is not starting at the left edge of the spectrum
-
     Returns:
       - list of fit parameters and list of parameter errors
     '''
@@ -184,17 +182,19 @@ def peak_finder(array,lower,upper,count_offset):
     #  - gaussian amp and expo shift estimated based on counts at left edge
     #  - expo slope determined using fit window boundaries 
     nentries = len(points)
-    mean = lower + (upper - lower)/2.0
+    mean = lower + (upper - lower)/2.0 
     slope = 2*(np.log(counts[-1])-np.log(counts[0]))/(points[-1]-points[0])
-    pinit = [counts[0]/2.0,mean,5.0,counts[0]*count_offset,slope]
+    pinit = [counts[0],mean,5.0,counts[0]*count_offset,slope]
+    #print('Initial parameters: amp = {0}, mean = {1}, sigma = {2}, amp2 = {3}'.format(pinit[0],pinit[1],pinit[2],pinit[3]))
 
     # Currently using leastsq fit from scipy
     #   - see scipy documentation for more information
-    errfunc = lambda p, x, y: gaus_plus_exp(x,p) - y 
+    errfunc = lambda p, x, y: gaus_plus_exp(x,p)-y
     pfit,pcov,infodict,errmsg,success = \
         optimize.leastsq(errfunc, pinit, args=(points,counts), \
             full_output=1, epsfcn=0.0001)
-
+    #print('after parameters: amp= {0}, mean ={1}, sigma = {2}, amp2  = {3}'.format(pfit[0],pfit[1],pfit[2],pfit[3]))
+    
     # Calculate fit parameter uncertainties using the covariance matrix
     #  and the (fit - data) variance
     if (len(counts) > len(pinit)) and pcov is not None:
@@ -213,17 +213,15 @@ def peak_finder(array,lower,upper,count_offset):
     perr_leastsq = np.array(error) 
     return pfit_leastsq, perr_leastsq 
 
-def get_double_peaks(rows, number, n=1, lower_limit=240, upper_limit=300, make_plot = False):
+def get_double_peaks(rows, number, n=1, lower_limit=480, upper_limit=600, make_plot = False):
     '''
     Applies double gaussian + expo fits to all data over some range of time
-
     Arguments:
       - full list of csv data input rows
       - number of days to run over
       - number of hours to integrate each calculation over
       - lower,upper limits for fit windows
       - flag to plot each fit for diagnostics
-
     Returns:
       - list of means,sigmas,amps for second gaussian in fit 
         - that's the Bi peak, so this is hard coded to work for a specific case
@@ -241,7 +239,7 @@ def get_double_peaks(rows, number, n=1, lower_limit=240, upper_limit=300, make_p
             integration = rows[(i*entries)+1:((i+1)*entries)+1]
             array_lst = [] 
             for j in integration:
-                array_lst.append(make_array(j))
+                array_lst.append(make_array(j,12))
 
             integrated = sum(array_lst)
             #print integrated
@@ -265,7 +263,7 @@ def get_double_peaks(rows, number, n=1, lower_limit=240, upper_limit=300, make_p
                 plt.title('Spectra integrated over a day')
                 plt.xlabel('channels')
                 plt.ylabel('counts')
-                plt.xlim(1,500)
+                plt.xlim(1,1000)
                 x = ar(range(0,len(integrated)))
                 plt.plot(x,integrated,'b:',label='data')
                 plt.plot(x,double_gaus_plus_exp(x,fit_pars),'ro:',label='fit')
@@ -278,10 +276,9 @@ def get_double_peaks(rows, number, n=1, lower_limit=240, upper_limit=300, make_p
 
     return means, sigmas, amps
 
-def get_peaks(rows, number=1, n=1, lower_limit=240, upper_limit=300, make_plot = False,count_offset=100): 
+def get_peaks(rows, number=1, n=1, lower_limit=480, upper_limit=600, make_plot = False,count_offset=100): 
     '''
     Applies double gaussian + expo fits to all data over some range of time
-
     Arguments:
       - full list of csv data input rows
       - number of days to run over
@@ -290,7 +287,6 @@ def get_peaks(rows, number=1, n=1, lower_limit=240, upper_limit=300, make_plot =
       - flag to plot each fit for diagnostics
       - count offset correction to fit parameters based on peak position
           (peaks farther from the left edge of spectrum need bigger correction)
-
     Returns:
       - lists of means,sigmas,amps from all gaussian fits
         - each entry in list includes the value and uncertainty
@@ -308,7 +304,7 @@ def get_peaks(rows, number=1, n=1, lower_limit=240, upper_limit=300, make_plot =
             integration = rows[(i*entries)+1:((i+1)*entries)+1]
             array_lst = [] 
             for j in integration:
-                array_lst.append(make_array(j))
+                array_lst.append(make_array(j,12))
 
             integrated = sum(array_lst)
             #print integrated
@@ -338,6 +334,64 @@ def get_peaks(rows, number=1, n=1, lower_limit=240, upper_limit=300, make_plot =
     counter = 0
     return means,sigmas,amps
 
+def get_peaks2(rows, number=1, n=1, lower_limit=900, upper_limit=1020, make_plot = False,count_offset=100): 
+    '''
+    This is for Tl-208
+    Applies  gaussian + const fits to all data over some range of time
+    Arguments:
+      - full list of csv data input rows
+      - number of days to run over
+      - number of hours to integrate each calculation over
+      - lower,upper limits for fit windows
+      - flag to plot each fit for diagnostics
+      - count offset correction to fit parameters based on peak position
+          (peaks farther from the left edge of spectrum need bigger correction)
+    Returns:
+      - lists of means,sigmas,amps from all gaussian fits
+        - each entry in list includes the value and uncertainty
+    '''
+    entries = 12*n
+    days = (24/n)
+    print('making {} plots for each day'.format(days))
+    i = 0
+    counter = 0
+    means = []
+    sigmas = []
+    amps = []
+    while i < number*days:
+        if counter < days:
+            integration = rows[(i*entries)+1:((i+1)*entries)+1]
+            array_lst = [] 
+            for j in integration:
+                array_lst.append(make_array(j,12))
+
+            integrated = sum(array_lst)
+            #print integrated
+            fit_pars,fit_errs = peak_finder(integrated,lower_limit,upper_limit,count_offset)
+            means.append([fit_pars[1],fit_errs[1]])
+            sigmas.append([fit_pars[2],fit_errs[2]])
+            amps.append([fit_pars[0],fit_errs[0]])
+
+            counter +=1 
+            i+=1
+            if make_plot:
+                fig = plt.figure()
+                fig.patch.set_facecolor('white')
+                plt.title('Spectra integrated over a day')
+                plt.xlabel('channels')
+                plt.ylabel('counts')
+                plt.xlim(1,1000)
+                #plt.ylim()
+                x = ar(range(0,len(integrated)))
+                plt.plot(x,integrated,'b:',label='data')
+                plt.plot(x,gaus_plus_const(x,fit_pars),'ro:',label='fit')
+                plt.legend()
+                plt.yscale('log')
+                plt.show()
+        else:
+            counter = 0
+    counter = 0
+    return means,sigmas,amps
 #--------------------------------------------------------------------------#
 # Methods for performing calculations on fit results
 #--------------------------------------------------------------------------#
@@ -361,18 +415,16 @@ def get_mean(values):
 def get_peak_counts(means,sigmas,amps):
     '''
     Calculate the area under a gaussian curve (estimate of counts in that peak)
-
     Arguments:
       - list of guassian means
       - list of guassian widths
       - list of gaussian amplitudes
-
     Returns:
       - list of counts from resulting gaussian integrations 
     '''
     counts = []
     for i in range(len(means)):
-        count,err = quad(gaus,0,500,args=(amps[i],means[i],sigmas[i]))
+        count,err = quad(gaus,0,1000,args=(amps[i],means[i],sigmas[i]))
         counts.append(count)
     return counts
 
@@ -380,23 +432,78 @@ def get_calibration(rows,ndays):
     '''
     Specific method for getting the data calibration assuming Bi-214 is part
     of a double peak and fitting data integrated over a day not an hour
-
     Returns a single calibration constant
     '''
-    Bi_peaks, Bi_sigmas, Bi_amps = get_double_peaks(rows,ndays,24,80,160,True)
-    K_peaks,K_errs = get_peaks(rows,ndays,24,220,320)
-
+    Bi_peaks, Bi_sigmas, Bi_amps = get_double_peaks(rows,ndays,24,240,320,True)
+    K_peaks,K_errs = get_peaks(rows,ndays,24,440,640)
+    Tl_peaks,Tl_errs = get_peaks2(rows,ndays,24,900,1020)
+    
     print(Bi_peaks)
     print(K_peaks)
-
+    print(Tl_peaks)
+    
     Bi_mean, Bi_var = get_mean(np.asarray(Bi_peaks))
     K_mean, K_var = get_mean(np.asarray(K_peaks))
-    print('bizmuth peak channel = {}, potassium peak channel = {}'.format(Bi_mean,K_mean))
+    Tl_mean, Tl_var = get_mean(np.asarray(Tl_peaks))
+    
+    print('bizmuth peak channel = {}, potassium peak channel = {}, thallium peak channel= {}'.format(Bi_mean,K_mean,Tl_mean))
 
     calibration_constant = (1460-609)/(K_mean - Bi_mean)
     print('keV/channel = {}'.format(calibration_constant))
     return calibration_constant
 
+def spectrum_peaks_plotter(rows):
+    '''
+    This method intergrates the input data  from the CSV file, and make an estimated 
+    plot for each isotope peak, based on number of channels and the corresponding 
+    counts of each isotope 
+    '''
+    n=4
+    entries = 12*n
+    integration = rows[1:entries+1]
+    array_lst = []
+    for j in integration:
+        array_lst.append(make_array(j,160,320))
+    integrated = sum(array_lst)     
+
+    Channels = range(0,len(integrated))
+    Counts = integrated
+    plt.plot(Channels, Counts)
+    plt.xlabel('Channels')
+    plt.ylabel('Counts')
+    plt.title('Bi-Peaks Identifier ')
+    plt.show()
+    
+    integration_1 = rows[1:entries+1]
+    array_lst_1 = []
+    for i in integration_1:
+        array_lst_1.append(make_array(i,540,640))
+    integrated_1 = sum(array_lst_1)     
+            
+    Channels_1 = range(0,len(integrated_1))
+    Counts_1 = integrated_1
+   
+    plt.plot(Channels_1, Counts_1)
+    plt.xlabel('Channels')
+    plt.ylabel('Counts')
+    plt.title('K-Peak Identifier')
+    plt.show()
+    
+    integration_2 = rows[1:entries+1]
+    array_lst_2 = []
+    for j in integration_2:
+        array_lst_2.append(make_array(j,800,1022))
+    integrated_2 = sum(array_lst_2)     
+            
+    Channels_2 = range(0,len(integrated_2))
+    Counts_2 = integrated_2
+    
+    plt.plot(Channels_2, Counts_2)
+    plt.xlabel('Channels')
+    plt.ylabel('Counts')
+    plt.title('Tl-Peak Identifier')
+    plt.show()
+    
 if __name__ == '__main__':
 	# import data from weather station for all isotopes
     date = []
@@ -406,10 +513,11 @@ if __name__ == '__main__':
     #url = 'https://radwatch.berkeley.edu/sites/default/files/dosenet/lbl_outside_d3s.csv'
     url = 'https://radwatch.berkeley.edu/sites/default/files/dosenet/etch_roof_d3s.csv'
     print(url)
-    response = urllib2.urlopen(url)
+    response = urllib.request.urlopen(url)
     print(response)
     rows = []
-    reader = csv.reader(response, delimiter=",")
+    # Reading file in python 3
+    reader = csv.reader(codecs.iterdecode(response, 'utf-8'))
 
     for row in reader:
         rows.append(row)
@@ -426,12 +534,14 @@ if __name__ == '__main__':
     # Get fit results for ndays integrating over nhours for each fit
     #---------------------------------------------------------------------#
     ndays = 7
-    nhours = 1
-    times = get_times(rows,ndays,nhours)
-    K_peaks, K_sigmas, K_amps = get_peaks(rows,ndays,nhours,220,320)
-    #Bi_peaks,Bi_sigmas,Bi_amps = get_double_peaks(rows,ndays,nhours,80,160)
-    Bi_peaks,Bi_sigmas,Bi_amps = get_peaks(rows,ndays,nhours,82,162,False,1)
+    nhours = 2
 
+    times = get_times(rows,ndays,nhours)
+    K_peaks, K_sigmas, K_amps = get_peaks(rows,ndays,nhours,540,640)
+    Bi_peaks,Bi_sigmas,Bi_amps = get_double_peaks(rows,ndays,nhours,160,320)
+    Bi_peaks,Bi_sigmas,Bi_amps = get_peaks(rows,ndays,nhours,164,324,False,1)
+    Tl_peaks, Tl_sigmas, Tl_amps = get_peaks2(rows,ndays,nhours,900,1000)
+    
     #-------------------------------------------------------------------------#
     # Break apart mean,sigma,amp values and uncertainties
     #-------------------------------------------------------------------------#
@@ -443,25 +553,34 @@ if __name__ == '__main__':
     Bi_ch_errs = np.asarray([i[1] for i in Bi_peaks])
     Bi_sig = [i[0] for i in Bi_sigmas]
     Bi_A = [i[0] for i in Bi_amps]
+    Tl_ch = np.asarray([i[0] for i in Tl_peaks])
+    Tl_ch_errs = np.asarray([i[1] for i in Tl_peaks])
+    Tl_sig = [i[0] for i in Tl_sigmas]
+    Tl_A = [i[0] for i in Tl_amps]
 
     K_ch_ave = np.mean(K_ch)
     K_ch_var = np.sqrt(np.var(K_ch))
     B_ch_ave = np.mean(Bi_ch)
     B_ch_var = np.sqrt(np.var(Bi_ch))
+    Tl_ch_ave = np.mean(Tl_ch)
+    Tl_ch_var = np.sqrt(np.var(Tl_ch))
+    
     print('K-40 <channel> = {} +/- {}'.format(K_ch_ave,K_ch_var))
     print('Bi-214 <channel> = {} +/- {}'.format(B_ch_ave,B_ch_var))
+    print('Tl-208 <channel> = {} +/- {}'.format(Tl_ch_ave,Tl_ch_var))
     for i in range(len(K_ch)):
         if abs(K_ch[i]-K_ch_ave) > 3*K_ch_var:
             print('Bad K-40 fit: peak channel = {}'.format(K_ch[i]))
         if abs(Bi_ch[i]-B_ch_ave) > 3*B_ch_var:
             print('Bad Bi-214 fit: peak channel = {}'.format(Bi_ch[i]))
+    
 
     #-------------------------------------------------------------------------#
-    # Get arrays of counts inside K-40 and Bi-214 peaks using fit results
+    # Get arrays of counts inside K-40, Bi-214,and Tl-208 peaks using fit results 
     #-------------------------------------------------------------------------#
     K_counts = get_peak_counts(K_ch,K_sig,K_A)
     Bi_counts = get_peak_counts(Bi_ch,Bi_sig,Bi_A)
-
+    Tl_counts= get_peak_counts(Tl_ch,Tl_sig,Tl_A)
     #-------------------------------------------------------------------------#
     # Get array of calibration constants from resulting K-40 and Bi-214 means
     #-------------------------------------------------------------------------#
@@ -477,8 +596,10 @@ if __name__ == '__main__':
     plt.title('K-40 counts vs Time')
     plt.xlabel('Time')
     plt.ylabel('counts')
+    plt.ylim(0,1600)
     ax.plot(times,K_counts, 'ro')
     ax.errorbar(times,K_counts,yerr=np.sqrt(K_counts),fmt='ro',ecolor='r')
+    fig.autofmt_xdate()
 
     fig, ax = plt.subplots()
     fig.patch.set_facecolor('white')
@@ -487,6 +608,7 @@ if __name__ == '__main__':
     plt.ylabel('counts')
     ax.plot(times,Bi_counts, 'ro')
     ax.errorbar(times,Bi_counts,yerr=np.sqrt(Bi_counts),fmt='ro',ecolor='r')
+    fig.autofmt_xdate()
 
     fig, ax = plt.subplots()
     fig.patch.set_facecolor('white')
@@ -495,7 +617,19 @@ if __name__ == '__main__':
     plt.ylabel('1460 center channel')
     ax.plot(times,K_ch, 'ro')
     ax.errorbar(times,K_ch,yerr=K_ch_errs,fmt='ro',ecolor='r')
+    fig.autofmt_xdate()
 
+    fig,ax=plt.subplots()
+    fig.patch.set_facecolor('white')
+    plt.title('Tl-208 count vs Time')
+    plt.xlabel('Time')
+    plt.ylabel('counts')
+    plt.ylim(0,1000)
+    ax.plot(times,Tl_counts, 'ro')
+    ax.errorbar(times,Tl_counts,yerr=np.sqrt(Tl_counts),fmt='ro',ecolor='r')
+    fig.autofmt_xdate()
+    
+    
     fig, ax = plt.subplots()
     fig.patch.set_facecolor('white')
     plt.title('609 Center channel vs Time')
@@ -504,6 +638,7 @@ if __name__ == '__main__':
     plt.ylim(B_ch_ave-10*B_ch_var,B_ch_ave+10*B_ch_var)
     ax.plot(times,Bi_ch, 'ro')
     ax.errorbar(times,Bi_ch,yerr=Bi_ch_errs,fmt='ro',ecolor='r')
+    fig.autofmt_xdate()
 
     fig, ax = plt.subplots()
     fig.patch.set_facecolor('white')
@@ -514,6 +649,7 @@ if __name__ == '__main__':
     plt.ylim(4.6,6.0)
     ax.plot(times,calibs, 'bo')
     ax.errorbar(times,calibs,yerr=calib_err,fmt='bo',ecolor='b')
+    fig.autofmt_xdate()
 
     # Finally: interested in how much the count rates vary for the two isotopes
     Bi_mean, Bi_var = get_mean(np.asarray(Bi_counts))
@@ -521,6 +657,26 @@ if __name__ == '__main__':
 
     K_mean, K_var = get_mean(np.asarray(K_counts))
     print('K-40 <N> = {} +/- {}'.format(K_mean,K_var))
-
+    
+    Tl_mean, Tl_var = get_mean(np.asarray(Tl_counts))
+    print('Tl-208 <N> = {} +/- {}'.format(Tl_mean,Tl_var))
+    #Plotting the the three Isotopes on same plot
+    fig=plt.figure()
+    #plt.plot_date(times,K_counts,'bo',label='k-40')
+    plt.errorbar(times,K_counts,yerr=np.sqrt(K_counts),fmt='bo',ecolor='b',label='K-40')
+    #plt.plot_date(times,Bi_counts,'ro',label='Bi-214')
+    plt.errorbar(times,Bi_counts,yerr=np.sqrt(Bi_counts),fmt='ro',ecolor='r',label='Bi-214')
+    #plt.plot_date(times,Tl_counts,'ko',label='Tl-208')
+    plt.errorbar(times,Tl_counts,yerr=np.sqrt(Tl_counts),fmt='ko',ecolor='y',label='Tl-208')
+    plt.ylim(0,1800)
+    plt.xlabel('Time')
+    plt.ylabel('counts')
+    plt.title('K-40,Bi-214,Tl-208 counts vs Time')
+    #plt.legend(bbox_to_anchor=(1.2, 0.05))
+    plt.legend(loc='upper center', bbox_to_anchor=(0.5, 1.02),
+          ncol=3, fancybox=True, shadow=False,numpoints=1)
+    fig.autofmt_xdate()
+    
     # Show all plots - add autosave?
     plt.show()
+    peaksplot= spectrum_peaks_plotter(rows)
