@@ -47,17 +47,6 @@ class Bin(object):
         return f'Start time: {self.start_time} | End time: {self.end_time} | Items: {self.items}'
 
 
-def save_unbinned_csv(url: str, filename: str):
-    """Saves the raw csv data coming from `url`
-
-    :param url:       URL to get data from
-    :param filename:  name of the file to be saved
-    """
-    save_dir = '/not_binned_data'
-    df = pd.DataFrame(url)
-    df.to_csv(os.path.join(save_dir, filename))
-
-
 def store_in_bins(data: np.array):
     """Averages data over `time_interval` and makes
     all timestamps uniform.
@@ -124,7 +113,7 @@ def main():
         START_TIME = int(datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S').timestamp())
 
     df_to_save = run_binner(args.url, args.col_name)
-    df_to_save.to_csv(os.path.join(args.save_dir, f'data_{args.col_name}.csv'),
+    df_to_save.to_csv(os.path.join(args.save_dir, f'data_{args.col_name}_{TIME_INTERVAL}.csv'),
                       index=False, na_rep='nan')
 
 
