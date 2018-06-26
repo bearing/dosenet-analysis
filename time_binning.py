@@ -3,7 +3,6 @@ from the URL, then it bins the data by time and produces consistent
 timestamps for the data points.
 """
 __author__ = 'Sagnik Bhattacharya (github.com/sagnibak)'
-import pdb
 import numpy as np
 import pandas as pd
 import argparse
