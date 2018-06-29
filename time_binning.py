@@ -31,7 +31,6 @@ class Bin(object):
             self.items = [value]
 
     def average(self):
-        # pdb.set_trace()
         if not self.items:
             return float('nan')
         return sum(self.items) / len(self.items)
@@ -112,7 +111,7 @@ def main():
         START_TIME = int(datetime.strptime(args.start_time, '%Y-%m-%d %H:%M:%S').timestamp())
 
     df_to_save = run_binner(args.url, args.col_name)
-    df_to_save.to_csv(os.path.join(args.save_dir, f'data_{args.col_name}_{TIME_INTERVAL}.csv'),
+    df_to_save.to_csv(os.path.join(args.save_dir, f'ws_data_{args.col_name}_{TIME_INTERVAL}.csv'),
                       index=False, na_rep='nan')
 
 

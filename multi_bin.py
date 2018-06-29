@@ -21,8 +21,15 @@ def run_all_binnings(time_interval):
     #     f'python time_binning.py ~/Downloads/etch_roof_d3s.csv -c cpm -s binned_data/ -i {time_interval}')
     # os.system(
     #     f'python time_binning.py ~/Downloads/etch_roof_adc.csv -c co2_ppm -s binned_data/ -i {time_interval}')
+    # os.system(
+    #     f'python time_binning.py ~/Downloads/etch_roof.csv -c cpmpg -s binned_data/ -i {time_interval}')
+
     os.system(
-        f'python time_binning.py ~/Downloads/etch_roof.csv -c cpmpg -s binned_data/ -i {time_interval}')
+        f'python time_binning.py wunderground_data/data_0.csv -c Temperature -s binned_data/ -i {time_interval}')
+    os.system(
+        f'python time_binning.py wunderground_data/data_0.csv -c Pressure -s binned_data/ -i {time_interval}')
+    os.system(
+        f'python time_binning.py wunderground_data/data_0.csv -c Humidity -s binned_data/ -i {time_interval}')
 
 
 def main():
