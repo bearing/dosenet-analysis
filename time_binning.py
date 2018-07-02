@@ -8,6 +8,7 @@ import pandas as pd
 import argparse
 from time import time
 from datetime import datetime
+from math import isnan
 import os
 
 
@@ -25,6 +26,8 @@ class Bin(object):
             self.items = None
 
     def store(self, value):
+        if isnan(value):
+            value = 0.
         if self.items:
             self.items.append(value)
         else:
@@ -36,9 +39,30 @@ class Bin(object):
         return sum(self.items) / len(self.items)
 
     def has_time(self, time_):
+        """
+        >>> a = Bin(100., 150.)
+        >>> a.has_time(22)
+        False
+        >>> a.has_time(100.)
+        True
+        >>> a.has_time(149.999)
+        True
+        >>> a.has_time(150.)
+        False
+        >>> a.has_time(200)
+        False
+        """
         return self.start_time <= time_ < self.end_time
 
     def to_list(self):
+        """
+        >>> a = Bin(100, 150, [100., 200., 250, 200., 0.])
+        >>> a.to_list()
+        [100, 150.0]
+        >>> a.store(float('nan'))
+        >>> a.to_list()
+        [100, 125.0]
+        """
         return [self.start_time, self.average()]
 
     def __str__(self):
@@ -79,13 +103,22 @@ def store_in_bins(data: np.array):
 
 
 def run_binner(url: str, col_name: str):
-    df = pd.read_csv(url, sep=',')
+    try:
+        df = pd.read_csv(url, sep=',')
+    except ValueError as ve:
+        if isinstance(url, pd.DataFrame):
+            df = url
+        else:
+            raise ValueError('Cannot handle this data!')
+
     timestamps = df['deviceTime_unix'].astype(float)
     data = df[col_name].astype(float)
 
     df = pd.DataFrame(data={'timestamps': timestamps, 'data': data})
+    # make sure dataframe is sorted in descending order
+    dg = df.sort_values(by='timestamps', axis=0, ascending=False)
 
-    return store_in_bins(df.values)
+    return store_in_bins(dg.values)
 
 
 def main():
