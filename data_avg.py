@@ -1,17 +1,19 @@
-#General averaging code
+#code to average data and graph data
+
 import csv
 import urllib.request
 import codecs
 import numpy as np
 import datetime
-from datetime import timedelta
+
+from bokeh.plotting import figure, show
+from bokeh.models import LinearAxis, Range1d
 
 class data_average:
     def _init_(self):
         pass
 
-    #get csv file from url
-    def get_csv(url):
+    def get_csv(self, url):
         csv_file = urllib.request.urlopen(url)
         data = csv.reader(codecs.iterdecode(csv_file, 'utf-8'))
         data_list = []
@@ -19,28 +21,78 @@ class data_average:
             data_list.append(row)
         return data_list
 
-    #to average data
-    def average(url, start_time, stop_time, avg_over_time, column):
+    def avg_main(self, url, sec_start, sec_stop, avg_over_time, column):
+        sec_stop = float(sec_stop)
+        sec_start = float(sec_start)
         csv_data = np.array(self.get_csv(url))
-        sec_start = datetime.datetime(start_time).timestamp()
-        sec_stop = datetime.datetime(stop_time).timestamp()
-        counter = int((sec_stop - sec_start)/avg_over_time) # num of times  program will take an avg
-        early = start_time # lower bound
-        sec_added = datetime.timedelta(seconds = avg_over_time) # allows the addition of seconds to datetime to get another datetime
-        late = start_time + sec_added # upper bound
+        csv_data = np.delete(csv_data, (0), axis=0)
+        time_data = csv_data[:,2].astype(float)
+        bin_number = int((sec_stop - sec_start)/avg_over_time)
+        early = sec_start
+        late = early + avg_over_time
         avgd_data_points = []
-        while counter>0:
-            index_list = np.where(np.logical_and(csv_data[:][0] >= early, csv_data[:][0] < late)) #finds the indices of the needed datetime values
-            index_list_size = np.shape(index_list)[1] #finds number of elements in index_list
-            counter2 = index_list_size
-            to_be_avged = {}
-            while index_list_size>=0:
-                a = csv_data[index_list[0][index_list_size]][column-1]
-                to_be_avged.append(a)
-                index_list_size += -1
+        while bin_number > 0:
+            to_be_avged = []
+            index_list= list(np.where(np.logical_and(time_data >= float(early) , time_data < float(late))))
+            counter = index_list[0].size
+            if counter == 0:
+                early = late
+                late += avg_over_time
+                bin_number -= 1
+            upper_bound = index_list[-1]
+            to_be_avged = []
+            errors = []
+            while counter > 0:
+                b1 = csv_data[upper_bound - counter - 1, column-1]
+                b = [float(n) for n in b1]
+                c1 = csv_data[upper_bound - counter - 1, -1]
+                c = [float(n) for n in c1]
+                to_be_avged.append(b)
+                errors.append(c)
+                counter -= 1
+            avg_time = (early+late)/2
             bin_avg = np.average(to_be_avged)
-            avgd_data_points.append(bin_avg)
+            error_avg = np.average(errors)
+            avgd_data_points.append([avg_time,bin_avg,error_avg])
             early = late
-            late += sec_added
-            counter += -1
+            late += avg_over_time
+            print(bin_number)
+            bin_number += -1
         return avgd_data_points
+
+class avg_graph:
+    def _init_(self):
+        pass
+
+    def graph(self, points, error):
+        plot = figure(plot_width = 1000, plot_height = 1000, tools="pan,wheel_zoom,box_zoom,reset")
+        i = len(points)
+
+        while i > 0:
+            print(i)
+            plot.circle(x=points[i-1][0], y=points[i-1][1])
+            i -= 1
+
+        i = len(points)
+        if error == 'Y':
+            while i > 0:
+                print(i)
+                plot.vbar(x=points[i-1][0],top=points[i-1][2], bottom = 0, width = 1, color = "red")
+                i -= 1
+
+        show(plot)
+
+a = str(input('csv url: '))
+b = int(input('start time (sec since epoch): '))
+c = int(input('stop time: '))
+d = int(input('# of sec to avg over: '))
+e = int(input('column of csv to avg: '))
+f = str(input('plot with error? (Y/N): '))
+
+print('Progress:')
+avger = data_average()
+final_data_list = avger.avg_main(a, b, c, d, e)
+
+grapher = avg_graph()
+grapher.graph(final_data_list, f)
+print('Finished')
