@@ -6,7 +6,7 @@ import codecs
 import numpy as np
 import datetime
 
-from bokeh.plotting import figure, show
+from bokeh.plotting import figure, show, output_file, save
 from bokeh.models import LinearAxis, Range1d
 
 class data_average:
@@ -64,7 +64,7 @@ class avg_graph:
     def _init_(self):
         pass
 
-    def graph(self, points, error):
+    def graph(self, points, error, to_do):
         plot = figure(plot_width = 1000, plot_height = 1000, tools="pan,wheel_zoom,box_zoom,reset")
         i = len(points)
 
@@ -80,7 +80,11 @@ class avg_graph:
                 plot.vbar(x=points[i-1][0],top=points[i-1][2], bottom = 0, width = 1, color = "red")
                 i -= 1
 
-        show(plot)
+        if to_do == 'Y':
+            show(plot)
+        else:
+            output_file(to_do+'.html')
+            save(plot)
 
 a = str(input('csv url: '))
 b = int(input('start time (sec since epoch): '))
@@ -88,11 +92,12 @@ c = int(input('stop time: '))
 d = int(input('# of sec to avg over: '))
 e = int(input('column of csv to avg: '))
 f = str(input('plot with error? (Y/N): '))
+g = str(input('save or show (save: file name, show: Y): '))
 
 print('Progress:')
 avger = data_average()
 final_data_list = avger.avg_main(a, b, c, d, e)
 
 grapher = avg_graph()
-grapher.graph(final_data_list, f)
+grapher.graph(final_data_list, f, g)
 print('Finished')
