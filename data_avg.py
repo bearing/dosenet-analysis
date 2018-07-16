@@ -151,15 +151,7 @@ b = int(input('start time (sec since epoch): '))
 c = int(input('stop time: '))
 d = int(input('# of sec to avg over: '))
 e = int(input('column of csv to avg: '))
-'''
-a = 'https://radwatch.berkeley.edu/sites/default/files/dosenet/etch_roof.csv'
-a2 = 'https://radwatch.berkeley.edu/sites/default/files/dosenet/etch_roof_adc.csv'
-b = 1530859550
-c = 1531166451
-d = 10000
-e = 4
-e2 = 4
-'''
+
 if a2 != 'N':
     e2 = int(input('column of csv2 to avg: '))
     g = int(input('1) data1 v d2 OR 2) d1,d2 v time (1/2): '))
